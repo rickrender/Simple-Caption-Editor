@@ -1,5 +1,5 @@
 # Simple Caption Editor
-A simple tool for managing image captions individually or in bulk. Features include systematic file renaming, text find/replace, and the ability to prepend trigger words for AI image generation prompts. Streamline your workflow with organized, consistent captions.
+A simple tool for managing image captions individually or in bulk. Features include systematic file renaming, text find/replace, and the ability to prepend trigger words to captions.
 
 Simple Caption Editor is written in Python using PyQt5, only one dependency. Simple, efficient and straight to the point. This GUI was tested on both Windows and Mac. 
 
