@@ -1,7 +1,7 @@
 # Simple Caption Editor
 Efficiently manage image captions in bulk or individually. Edit captions with structural renaming, find and replace functionality, and prefix trigger word appending. Perfect for streamlining your image caption workflow.
 
-Simple Caption Editor is written in Python using PyQt5, only one dependency. Simple, efficient and straight to the point. This GUI works on both Windows and Mac. 
+Simple Caption Editor is written in Python using PyQt5, only one dependency. Simple, efficient and straight to the point. This GUI was tested on both Windows and Mac. 
 
 Although still in active development, v1 delivers core functionality for caption editing and file management. Additional features and improvements are planned for future releases.
 
