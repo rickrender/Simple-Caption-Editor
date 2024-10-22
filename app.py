@@ -577,7 +577,7 @@ class FileEditorApp(QMainWindow):
 
         # Add 'GitHub' link
         github_action = help_menu.addAction('GitHub')
-        github_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/url")))
+        github_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/rickrender/Simple-Caption-Editor")))
 
         # Add 'Developer Website' link
         dev_website_action = help_menu.addAction('Developer Website')
