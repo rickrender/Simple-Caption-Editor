@@ -5,6 +5,8 @@ Simple Caption Editor is written in Python using PyQt5, only one dependency. Sim
 
 Although still in active development, v1 delivers core functionality for caption editing and file management. Additional features and improvements are planned for future releases.
 
+There are mature tools for generating captions, this is simply a bulk editor for manipulating these captions.
+
 ![Simple Caption Editor Screenshot](https://raw.githubusercontent.com/rickrender/Simple-Caption-Editor/main/Simple-Caption-Editor-Screenshot.png)
 
 # Installation Instructions
