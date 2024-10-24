@@ -50,6 +50,11 @@ python app.py
 ```bash
 python app.py --light-mode
 ```
+# Updates 
+```bash
+git pull
+```
+
 # Quick Tips: 
 Customize your viewing experience using keyboard shortcuts or the menu options to adjust the font size in both the file list and editor views. This makes it easier to read and work with your captions at a comfortable size.
 
