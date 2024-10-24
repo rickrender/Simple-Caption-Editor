@@ -330,9 +330,12 @@ class FileEditorApp(QMainWindow):
 
         total_files = len(image_files)
 
+        # Determine the number of digits needed for the index
+        index_format = f"{{:0{len(str(total_files))}d}}"
+
         for index, image_name in enumerate(image_files, start=1):
             base_name, image_ext = os.path.splitext(image_name)
-            new_image_name = f"{name_structure}{index:02d}{image_ext}" if total_files < 100 else f"{name_structure}{index}{image_ext}"
+            new_image_name = f"{name_structure}{index_format.format(index)}{image_ext}"
 
             old_image_path = os.path.join(folder_path, image_name)
             new_image_path = os.path.join(folder_path, new_image_name)
@@ -340,7 +343,7 @@ class FileEditorApp(QMainWindow):
 
             corresponding_text_file = f"{base_name}.txt"
             if corresponding_text_file in text_files:
-                new_text_name = f"{name_structure}{index:02d}.txt" if total_files < 100 else f"{name_structure}{index}.txt"
+                new_text_name = f"{name_structure}{index_format.format(index)}.txt"
                 old_text_path = os.path.join(folder_path, corresponding_text_file)
                 new_text_path = os.path.join(folder_path, new_text_name)
                 os.rename(old_text_path, new_text_path)
