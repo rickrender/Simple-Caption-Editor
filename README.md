@@ -7,8 +7,9 @@ Although still in active development, v1 delivers core functionality for caption
 
 There are mature tools for generating captions, this is simply a bulk editor for manipulating these captions.
 
-Updates:
-10-25-24: Rearranged the GUI for a better working flow, added a search captions field, added an additional keyboard shortcut to toggle between file list and editor view, unsaved changes warning, status bar in lieu of popup dialog hell and better compatibility across Windows and Mac + a couple of bug fixes.
+# Changelog
+10-25-24: 
+Rearranged the GUI for a better working flow, added a search captions field, added an additional keyboard shortcut to toggle between file list and editor view, unsaved changes warning, status bar in lieu of popup dialog hell and better compatibility across Windows and Mac + a couple of bug fixes.
 
 ![Simple Caption Editor Screenshot](https://raw.githubusercontent.com/rickrender/Simple-Caption-Editor/main/Simple-Caption-Editor-Screenshot.png)
 
