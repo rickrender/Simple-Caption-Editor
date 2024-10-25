@@ -1,8 +1,8 @@
 import sys
 import argparse
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy, QWidget, QPushButton, QLineEdit, QListWidget, QTextEdit, QMessageBox, QDialog, QScrollArea, QShortcut
-from PyQt5.QtGui import QImage, QPixmap, QKeySequence, QDesktopServices
-from PyQt5.QtCore import Qt, QUrl  # Correct import for Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy, QWidget, QPushButton, QLineEdit, QListWidget, QTextEdit, QMessageBox, QDialog, QScrollArea, QShortcut, QAction
+from PyQt5.QtGui import QImage, QPixmap, QKeySequence, QDesktopServices, QTextCursor, QTextCharFormat, QColor
+from PyQt5.QtCore import Qt, QUrl
 import os
 import platform
 
@@ -11,6 +11,9 @@ class FileEditorApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Simple Caption Editor")
         self.setGeometry(100, 100, 1200, 800)
+
+        # Status bar for notifications
+        self.statusBar = self.statusBar()
 
         # Apply stylesheets
         if dark_mode:
@@ -25,11 +28,10 @@ class FileEditorApp(QMainWindow):
         self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.main_layout.setSpacing(5)
 
-        # Control panel and image preview (Column 1)
+        # Control panel and file list (Column 1)
         self.control_panel_layout = QVBoxLayout()
         self.control_panel_layout.setContentsMargins(10, 10, 10, 10)
         self.control_panel_layout.setSpacing(10)
-        self.main_layout.addLayout(self.control_panel_layout)
 
         # Folder selection
         self.folder_button = self.create_button("Select Folder")
@@ -99,10 +101,28 @@ class FileEditorApp(QMainWindow):
 
         self.control_panel_layout.addLayout(replace_buttons_layout)
 
-        # Spacer to maintain consistent spacing
-        self.control_panel_layout.addSpacerItem(QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        # Add spacer
+        self.control_panel_layout.addSpacerItem(QSpacerItem(15, 15, QSizePolicy.Minimum, QSizePolicy.Fixed))
 
-        # Image preview with scroll area
+        # Filter input
+        self.filter_entry = QLineEdit()
+        self.filter_entry.setPlaceholderText("Search Captions")
+        self.filter_entry.textChanged.connect(self.filter_file_list)
+        self.control_panel_layout.addWidget(self.filter_entry)
+
+        # File list
+        self.file_list = QListWidget()
+        self.file_list.itemSelectionChanged.connect(self.on_file_select)
+        self.control_panel_layout.addWidget(self.file_list, stretch=1)
+
+        # Add the control panel layout to the main layout
+        self.main_layout.addLayout(self.control_panel_layout)
+
+        # Image preview (Column 2)
+        self.image_layout = QVBoxLayout()
+        self.image_layout.setContentsMargins(10, 10, 10, 10)
+        self.image_layout.setSpacing(10)
+
         self.image_scroll_area = QScrollArea()
         self.image_scroll_area.setFrameStyle(QScrollArea.NoFrame)
         self.image_label = QLabel()
@@ -110,38 +130,27 @@ class FileEditorApp(QMainWindow):
         self.image_label.mousePressEvent = self.show_full_image
         self.image_scroll_area.setWidget(self.image_label)
         self.image_scroll_area.setWidgetResizable(True)
-        self.control_panel_layout.addWidget(self.image_scroll_area, stretch=1)
+        self.image_layout.addWidget(self.image_scroll_area, stretch=1)
 
-        # File list (Column 2)
-        self.file_list = QListWidget()
-        self.file_list.itemSelectionChanged.connect(self.on_file_select)
+        self.main_layout.addLayout(self.image_layout)
 
-        file_list_layout = QVBoxLayout()
-        file_list_layout.setContentsMargins(10, 10, 10, 10)
-        file_list_layout.setSpacing(10)
-        file_list_layout.addWidget(self.file_list)
-
-        file_list_widget = QWidget()
-        file_list_widget.setLayout(file_list_layout)
-
-        self.main_layout.addWidget(file_list_widget)
-
-        # Text editor and save button (Column 3)
+        # Text editor (Column 3)
         self.editor_layout = QVBoxLayout()
         self.editor_layout.setContentsMargins(10, 10, 10, 10)
         self.editor_layout.setSpacing(10)
-        self.editor_widget = QWidget()
-        self.editor_widget.setLayout(self.editor_layout)
-        self.main_layout.addWidget(self.editor_widget)
 
         self.editor = QTextEdit()
+        self.editor.textChanged.connect(self.mark_unsaved_changes)
         self.editor_layout.addWidget(self.editor)
 
         self.save_button = self.create_button("Save")
         self.save_button.clicked.connect(self.save_file)
         self.editor_layout.addWidget(self.save_button)
 
+        self.main_layout.addLayout(self.editor_layout)
+
         self.current_file = None
+        self.unsaved_changes = False
 
         # Set font size for the text editor
         editor_font = self.editor.font()
@@ -160,6 +169,7 @@ class FileEditorApp(QMainWindow):
         self.trigger_entry.setFont(text_field_font)
         self.find_entry.setFont(text_field_font)
         self.replace_entry.setFont(text_field_font)
+        self.filter_entry.setFont(text_field_font)
 
         # Keyboard shortcuts
         self.setup_shortcuts()
@@ -182,20 +192,26 @@ class FileEditorApp(QMainWindow):
         return button
 
     def setup_shortcuts(self):
-        # Determine the platform
-        if platform.system() == 'Darwin':  # macOS
-            save_shortcut = QShortcut(QKeySequence("Ctrl+S"), self)  # Cmd+S on macOS
-        else:  # Windows and others
-            save_shortcut = QShortcut(QKeySequence.Save, self)
-        
-        save_shortcut.activated.connect(self.save_file)
-
-        # Font size shortcuts
-        increase_font_shortcut = QShortcut(QKeySequence.ZoomIn, self)
-        decrease_font_shortcut = QShortcut(QKeySequence.ZoomOut, self)
+        # Only set up font size shortcuts
+        increase_font_shortcut = QShortcut(QKeySequence("Ctrl+="), self)
+        decrease_font_shortcut = QShortcut(QKeySequence("Ctrl+_"), self)
 
         increase_font_shortcut.activated.connect(self.increase_font_size)
         decrease_font_shortcut.activated.connect(self.decrease_font_size)
+
+        # Switch focus between file list and editor
+        switch_focus = QShortcut(QKeySequence("Ctrl+E"), self)
+        switch_focus.activated.connect(self.toggle_focus)
+
+    def toggle_focus(self):
+        if self.editor.hasFocus():
+            self.file_list.setFocus()
+        else:
+            self.editor.setFocus()
+            # Move the cursor to the end of the text
+            cursor = self.editor.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            self.editor.setTextCursor(cursor)
 
     def select_folder(self):
         folder_path = QFileDialog.getExistingDirectory(self, "Select Folder")
@@ -230,25 +246,6 @@ class FileEditorApp(QMainWindow):
             self.file_list.setCurrentRow(0)
             self.on_file_select()  # Load the content of the first file
 
-    def on_file_select(self):
-        selected_items = self.file_list.selectedItems()
-        if selected_items:
-            file_name = selected_items[0].text()
-            self.current_file = os.path.join(self.folder_label.text(), file_name)
-            self.load_file_content()
-
-    def load_file_content(self):
-        if self.current_file:
-            with open(self.current_file, "r") as file:
-                content = file.read()
-                self.editor.setText(content)
-
-            # Show image preview
-            base_name, _ = os.path.splitext(os.path.basename(self.current_file))
-            image_path = self.find_associated_image(base_name)
-            if image_path:
-                self.show_image_preview(image_path)
-
     def find_associated_image(self, base_name):
         folder_path = self.folder_label.text()
         for ext in ['.png', '.jpg', '.jpeg']:
@@ -268,29 +265,41 @@ class FileEditorApp(QMainWindow):
         pixmap = QPixmap.fromImage(image.scaled(scroll_area_width, scroll_area_width, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         self.image_label.setPixmap(pixmap)
 
+        # Store the pixmap for click detection
+        self.current_pixmap = pixmap
+
     def show_full_image(self, event):
-        if hasattr(self, 'current_image_path') and self.current_image_path:
-            dialog = QDialog(self)
-            dialog.setWindowTitle("Full Image View")
-            layout = QVBoxLayout(dialog)
+        if hasattr(self, 'current_pixmap') and self.current_pixmap:
+            # Get the actual size of the displayed image
+            pixmap_rect = self.image_label.pixmap().rect()
+            pixmap_rect.moveCenter(self.image_label.rect().center())
 
-            full_image_label = QLabel(dialog)
-            full_image_label.setAlignment(Qt.AlignCenter)  # Center the image
+            # Check if the click is within the image bounds
+            if pixmap_rect.contains(event.pos()):
+                dialog = QDialog(self)
+                dialog.setWindowTitle("Full Image View")
+                layout = QVBoxLayout(dialog)
 
-            full_pixmap = QPixmap(self.current_image_path)
+                full_image_label = QLabel(dialog)
+                full_image_label.setAlignment(Qt.AlignCenter)  # Center the image
 
-            def resize_event(event):
-                # Scale the image to fit within the dialog size, maintaining aspect ratio
-                scaled_pixmap = full_pixmap.scaled(full_image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                full_image_label.setPixmap(scaled_pixmap)
+                full_pixmap = QPixmap(self.current_image_path)
 
-            dialog.resizeEvent = resize_event  # Connect the resize event
+                def resize_event(event):
+                    # Scale the image to fit within the dialog size, maintaining aspect ratio
+                    scaled_pixmap = full_pixmap.scaled(full_image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    full_image_label.setPixmap(scaled_pixmap)
 
-            layout.addWidget(full_image_label)
-            dialog.setLayout(layout)
-            dialog.setMinimumSize(400, 300)  # Set a minimum size for the dialog
-            dialog.showMaximized()  # Open the dialog maximized
-            dialog.exec_()
+                dialog.resizeEvent = resize_event  # Connect the resize event
+
+                layout.addWidget(full_image_label)
+                dialog.setLayout(layout)
+                dialog.setMinimumSize(400, 300)  # Set a minimum size for the dialog
+                dialog.showMaximized()  # Open the dialog maximized
+                dialog.exec_()
+
+    def mark_unsaved_changes(self):
+        self.unsaved_changes = True
 
     def save_file(self):
         if self.current_file:
@@ -298,29 +307,45 @@ class FileEditorApp(QMainWindow):
             try:
                 with open(self.current_file, "w") as file:
                     file.write(content)
-                QMessageBox.information(self, "Success", "File saved successfully.")
+                self.statusBar.showMessage("File saved successfully.", 3000)
+                self.unsaved_changes = False
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save file: {e}")
         else:
             QMessageBox.warning(self, "Warning", "No file is currently open.")
+
+    def load_file_content(self):
+        if self.current_file:
+            with open(self.current_file, "r") as file:
+                content = file.read()
+                self.editor.setText(content)
+            
+            # Reset unsaved changes flag after loading content
+            self.unsaved_changes = False
+
+            # Show image preview
+            base_name, _ = os.path.splitext(os.path.basename(self.current_file))
+            image_path = self.find_associated_image(base_name)
+            if image_path:
+                self.show_image_preview(image_path)
 
     def rename_files(self):
         folder_path = self.folder_label.text()
         name_structure = self.rename_entry.text().strip()
 
         if not folder_path or not os.path.isdir(folder_path):
-            QMessageBox.critical(self, "Error", "Please select a valid folder.")
+            self.statusBar.showMessage("Please select a valid folder.", 3000)
             return
 
         if not name_structure:
-            QMessageBox.critical(self, "Error", "Please enter a naming structure.")
+            self.statusBar.showMessage("Please enter a naming structure.", 3000)
             return
 
         image_files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         text_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.txt')]
 
         if not image_files:
-            QMessageBox.information(self, "Info", "No image files found in the specified folder.")
+            self.statusBar.showMessage("No image files found in the specified folder.", 3000)
             return
 
         image_files.sort()
@@ -352,19 +377,20 @@ class FileEditorApp(QMainWindow):
                 if self.current_file == old_text_path:
                     self.current_file = new_text_path
 
-        QMessageBox.information(self, "Success", f"Renamed {total_files} image files and their associated text files.")
+        self.statusBar.showMessage(f"Renamed {total_files} image files and their associated text files.", 3000)
         self.populate_file_list(folder_path)
         self.load_file_content()  # Refresh editor
 
     def apply_trigger_to_all(self):
+        self.unsaved_changes = False  # Temporarily disable unsaved changes check
         trigger = self.trigger_entry.text().strip()
         if not trigger:
-            QMessageBox.critical(self, "Error", "Please enter a trigger word.")
+            self.statusBar.showMessage("Please enter a trigger word.", 3000)
             return
 
         folder_path = self.folder_label.text()
         if not folder_path or folder_path == "No folder selected" or not os.path.isdir(folder_path):
-            QMessageBox.critical(self, "Error", "Please select a valid folder.")
+            self.statusBar.showMessage("Please select a valid folder.", 3000)
             return
 
         text_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.txt')]
@@ -377,18 +403,19 @@ class FileEditorApp(QMainWindow):
                 file.write(f"{trigger} {content}")
                 file.truncate()
 
-        QMessageBox.information(self, "Success", "Trigger applied to all text files.")
+        self.statusBar.showMessage(f"Applied trigger '{trigger}' to all text files.", 3000)
         self.populate_file_list(folder_path)
         self.load_file_content()  # Refresh editor
 
     def apply_trigger_to_selected(self):
+        self.unsaved_changes = False  # Temporarily disable unsaved changes check
         trigger = self.trigger_entry.text().strip()
         if not trigger:
-            QMessageBox.critical(self, "Error", "Please enter a trigger word.")
+            self.statusBar.showMessage("Please enter a trigger word.", 3000)
             return
 
         if not self.current_file:
-            QMessageBox.critical(self, "Error", "No file selected.")
+            self.statusBar.showMessage("No file selected.", 3000)
             return
 
         with open(self.current_file, "r+") as file:
@@ -397,15 +424,16 @@ class FileEditorApp(QMainWindow):
             file.write(f"{trigger} {content}")
             file.truncate()
 
-        QMessageBox.information(self, "Success", "Trigger applied to the selected text file.")
+        self.statusBar.showMessage(f"Applied trigger '{trigger}' to the selected text file.", 3000)
         self.load_file_content()  # Refresh editor
 
     def replace_in_selected(self):
+        self.unsaved_changes = False  # Temporarily disable unsaved changes check
         find_text = self.find_entry.text()
         replace_text = self.replace_entry.text()
 
         if not self.current_file:
-            QMessageBox.critical(self, "Error", "No file selected.")
+            self.statusBar.showMessage("No file selected.", 3000)
             return
 
         with open(self.current_file, "r+") as file:
@@ -415,16 +443,17 @@ class FileEditorApp(QMainWindow):
             file.write(new_content)
             file.truncate()
 
-        QMessageBox.information(self, "Success", "Text replaced in the selected file.")
+        self.statusBar.showMessage(f"Replaced '{find_text}' with '{replace_text}' in the selected file.", 3000)
         self.load_file_content()  # Refresh editor
 
     def replace_in_all(self):
+        self.unsaved_changes = False  # Temporarily disable unsaved changes check
         find_text = self.find_entry.text()
         replace_text = self.replace_entry.text()
 
         folder_path = self.folder_label.text().strip()
         if not folder_path or folder_path == "No folder selected" or not os.path.isdir(folder_path):
-            QMessageBox.critical(self, "Error", "Please select a valid folder.")
+            self.statusBar.showMessage("Please select a valid folder.", 2000)
             return
 
         text_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.txt')]
@@ -439,12 +468,26 @@ class FileEditorApp(QMainWindow):
                     file.write(new_content)
                     file.truncate()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to replace text in {file_name}: {e}")
+                self.statusBar.showMessage(f"Failed to replace text in {file_name}: {e}", 3000)
                 return  # Exit the method if an error occurs
 
-        QMessageBox.information(self, "Success", "Text replaced in all files.")
+        self.statusBar.showMessage(f"Replaced '{find_text}' with '{replace_text}' in all files.", 3000)
         self.populate_file_list(folder_path)
         self.load_file_content()  # Refresh editor
+
+    def filter_file_list(self):
+        filter_text = self.filter_entry.text().lower()
+        folder_path = self.folder_label.text()
+
+        for index in range(self.file_list.count()):
+            item = self.file_list.item(index)
+            file_name = item.text()
+            file_path = os.path.join(folder_path, file_name)
+
+            if os.path.exists(file_path):
+                with open(file_path, "r") as file:
+                    content = file.read().lower()
+                    item.setHidden(filter_text not in content)
 
     def dark_mode_stylesheet(self):
         return """
@@ -557,10 +600,10 @@ class FileEditorApp(QMainWindow):
         # Create a 'File' menu
         file_menu = menu_bar.addMenu('File')
 
-        # Add 'Save Edit to Selected File' action with shortcut
-        save_action = file_menu.addAction('Save Edit to Selected File')
-        save_action.setShortcut(QKeySequence.Save)
-        save_action.triggered.connect(self.save_file)
+        # Create save action
+        self.save_action = file_menu.addAction('Save Edit to Selected File')
+        self.save_action.setShortcut(QKeySequence.Save)
+        self.save_action.triggered.connect(self.save_file)
 
         # Create a 'View' menu
         view_menu = menu_bar.addMenu('View')
@@ -578,13 +621,41 @@ class FileEditorApp(QMainWindow):
         # Create a 'Help' menu
         help_menu = menu_bar.addMenu('Help')
 
+        # Add 'Shortcuts' action
+        shortcuts_action = help_menu.addAction('Shortcuts')
+        shortcuts_action.triggered.connect(self.show_shortcuts)
+
+        # Add 'Developer Website' link
+        dev_website_action = help_menu.addAction('Developer')
+        dev_website_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://renderartist.com")))
+
         # Add 'GitHub' link
         github_action = help_menu.addAction('GitHub')
         github_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/rickrender/Simple-Caption-Editor")))
 
-        # Add 'Developer Website' link
-        dev_website_action = help_menu.addAction('Developer Website')
-        dev_website_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://renderartist.com")))
+    def show_shortcuts(self):
+        os_name = platform.system()
+        if os_name == 'Darwin':  # macOS
+            save_shortcut = "Cmd+S"
+            increase_font = "Cmd++"
+            decrease_font = "Cmd+-"
+            toggle_focus = "Cmd+E"
+        else:  # Windows and Linux
+            save_shortcut = "Ctrl+S"
+            increase_font = "Ctrl++"
+            decrease_font = "Ctrl+-"
+            toggle_focus = "Ctrl+E"
+
+        shortcuts_text = f"""
+        <b>Keyboard Shortcuts:</b><br>
+        <ul style="list-style-type:none;">
+            <li style="margin-bottom: 8px;">🔄 <b>Toggle (File List/Editor):</b> {toggle_focus}</li>
+            <li style="margin-bottom: 8px;">🔍 <b>Increase Font Size:</b> {increase_font}</li>
+            <li style="margin-bottom: 8px;">🔎 <b>Decrease Font Size:</b> {decrease_font}</li>
+            <li style="margin-bottom: 8px;">💾 <b>Save:</b> {save_shortcut}</li>
+        </ul>
+        """
+        QMessageBox.information(self, "Shortcuts", shortcuts_text)
 
     def increase_font_size(self):
         # Increase font size for editor and file list
@@ -606,6 +677,20 @@ class FileEditorApp(QMainWindow):
         self.file_list.setFont(file_list_font)
 
         # Note: Text fields are no longer adjusted
+
+    def on_file_select(self):
+        if self.unsaved_changes:
+            reply = QMessageBox.question(self, 'Unsaved Changes',
+                                         "You have unsaved changes. Are you sure you want to switch files?",
+                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.No:
+                return
+
+        selected_items = self.file_list.selectedItems()
+        if selected_items:
+            file_name = selected_items[0].text()
+            self.current_file = os.path.join(self.folder_label.text(), file_name)
+            self.load_file_content()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Quick Caption Editor")
