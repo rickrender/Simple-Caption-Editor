@@ -8,6 +8,9 @@ Although still in active development, v1 delivers core functionality for caption
 There are mature tools for generating captions, this is simply a bulk editor for manipulating these captions.
 
 # Changelog
+11-09-24:
+Added a folder refresh option, automatic creation of empty caption files if none exist, better file name sorting, options to convert .webp and .bmp files to supported formats (.jpeg, .png) if detected in selected folder. 
+
 10-25-24: 
 Rearranged the GUI for a better working flow, added a search captions field, added an additional keyboard shortcut to toggle between file list and editor view, unsaved changes warning, status bar in lieu of popup dialog hell and better compatibility across Windows and Mac + a couple of bug fixes.
 
