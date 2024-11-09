@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, QUrl
 import os
 import platform
 from PIL import Image  # Add this import at the top of your file
+import re  # Add at top with other imports
 
 class FileEditorApp(QMainWindow):
     def __init__(self, dark_mode=False):
@@ -322,19 +323,24 @@ class FileEditorApp(QMainWindow):
                 self.populate_file_list(folder_path)
                 self.create_missing_text_files(folder_path)  # Ensure text files are created for new images
 
+    def natural_sort_key(self, s):
+        """Sort strings containing numbers in human order"""
+        return [int(text) if text.isdigit() else text.lower()
+                for text in re.split('([0-9]+)', s)]
+
     def populate_file_list(self, folder_path):
         self.file_list.clear()
         files = [f for f in os.listdir(folder_path) if f.endswith(".txt")]
         
-        # Sort files alphabetically
-        files.sort()  # This will sort the files in alphabetical order
+        # Sort files using natural sort
+        files.sort(key=self.natural_sort_key)
         
         self.file_list.addItems(files)
 
         # Automatically select the first file in the list
         if files:
             self.file_list.setCurrentRow(0)
-            self.on_file_select()  # Load the content of the first file
+            self.on_file_select()
 
     def find_associated_image(self, base_name):
         folder_path = self.folder_label.text()
