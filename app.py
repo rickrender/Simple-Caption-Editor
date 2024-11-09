@@ -1,10 +1,11 @@
 import sys
 import argparse
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy, QWidget, QPushButton, QLineEdit, QListWidget, QTextEdit, QMessageBox, QDialog, QScrollArea, QShortcut, QAction
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy, QWidget, QPushButton, QLineEdit, QListWidget, QTextEdit, QMessageBox, QDialog, QScrollArea, QShortcut, QAction, QInputDialog
 from PyQt5.QtGui import QImage, QPixmap, QKeySequence, QDesktopServices, QTextCursor, QTextCharFormat, QColor
 from PyQt5.QtCore import Qt, QUrl
 import os
 import platform
+from PIL import Image  # Add this import at the top of your file
 
 class FileEditorApp(QMainWindow):
     def __init__(self, dark_mode=False):
@@ -29,14 +30,28 @@ class FileEditorApp(QMainWindow):
         self.main_layout.setSpacing(5)
 
         # Control panel and file list (Column 1)
+        control_panel_widget = QWidget()
+        control_panel_widget.setFixedWidth(350)
         self.control_panel_layout = QVBoxLayout()
-        self.control_panel_layout.setContentsMargins(10, 10, 10, 10)
-        self.control_panel_layout.setSpacing(10)
+        
+        # Create a container widget for the folder controls
+        folder_widget = QWidget()
+        folder_layout = QHBoxLayout(folder_widget)
+        folder_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Folder selection
         self.folder_button = self.create_button("Select Folder")
         self.folder_button.clicked.connect(self.select_folder)
-        self.control_panel_layout.addWidget(self.folder_button)
+        folder_layout.addWidget(self.folder_button)
+
+        # Initialize refresh button
+        self.refresh_button = self.create_button("🔄")
+        self.refresh_button.setFixedSize(30, 30)
+        self.refresh_button.clicked.connect(self.refresh_folder)
+        self.refresh_button.hide()  # Initially hidden
+        folder_layout.addWidget(self.refresh_button)
+
+        # Add the folder widget to the control panel layout
+        self.control_panel_layout.addWidget(folder_widget)
 
         self.folder_label = QLabel("No folder selected")
         self.control_panel_layout.addWidget(self.folder_label)
@@ -114,9 +129,12 @@ class FileEditorApp(QMainWindow):
         self.file_list = QListWidget()
         self.file_list.itemSelectionChanged.connect(self.on_file_select)
         self.control_panel_layout.addWidget(self.file_list, stretch=1)
-
-        # Add the control panel layout to the main layout
-        self.main_layout.addLayout(self.control_panel_layout)
+        
+        # Set the layout for the control panel widget
+        control_panel_widget.setLayout(self.control_panel_layout)
+        
+        # Add the control panel widget to the main layout
+        self.main_layout.addWidget(control_panel_widget)
 
         # Image preview (Column 2)
         self.image_layout = QVBoxLayout()
@@ -217,7 +235,12 @@ class FileEditorApp(QMainWindow):
         folder_path = QFileDialog.getExistingDirectory(self, "Select Folder")
         if folder_path:
             self.folder_label.setText(folder_path)
+            self.create_missing_text_files(folder_path)
+            self.check_and_offer_image_conversion(folder_path)
             self.populate_file_list(folder_path)
+
+            # Show refresh button when a folder is selected
+            self.refresh_button.show()
 
             # Enable buttons when a folder is selected
             self.rename_button.setEnabled(True)
@@ -227,6 +250,9 @@ class FileEditorApp(QMainWindow):
             self.replace_selected_button.setEnabled(True)
             self.save_button.setEnabled(True)
         else:
+            # Hide refresh button if no folder is selected
+            self.refresh_button.hide()
+
             # Disable buttons if no folder is selected
             self.rename_button.setEnabled(False)
             self.trigger_all_button.setEnabled(False)
@@ -235,10 +261,74 @@ class FileEditorApp(QMainWindow):
             self.replace_selected_button.setEnabled(False)
             self.save_button.setEnabled(False)
 
+    def create_missing_text_files(self, folder_path):
+        image_files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        text_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.txt')]
+
+        for image_file in image_files:
+            base_name, _ = os.path.splitext(image_file)
+            corresponding_text_file = f"{base_name}.txt"
+            if corresponding_text_file not in text_files:
+                text_file_path = os.path.join(folder_path, corresponding_text_file)
+                with open(text_file_path, 'w') as file:
+                    file.write("")  # Create an empty text file
+                self.statusBar.showMessage(f"Created missing text file: {corresponding_text_file}", 3000)
+
+    def check_and_offer_image_conversion(self, folder_path):
+        unsupported_formats = ['.bmp', '.webp']
+        found_formats = {ext for ext in unsupported_formats if any(f.lower().endswith(ext) for f in os.listdir(folder_path))}
+
+        if found_formats:
+            found_formats_str = ', '.join(found_formats)
+            supported_formats_str = ', '.join(['.jpeg', '.png'])
+            message = (f"Found unsupported image formats: {found_formats_str}\n"
+                       f"This app only supports .jpeg and .png\n"
+                       f"Would you like to convert to {supported_formats_str}?")
+            
+            reply = QMessageBox.question(self, 'Convert Images', message, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.convert_images(folder_path, [f for f in os.listdir(folder_path) if any(f.lower().endswith(ext) for ext in found_formats)])
+
+    def convert_images(self, folder_path, image_files):
+        format_choice, ok = QInputDialog.getItem(self, "Select Format", "Convert images to:", [".jpeg", ".png"], 0, False)
+        if ok:
+            successful_conversions = []
+            for image_file in image_files:
+                image_path = os.path.join(folder_path, image_file)
+                base_name, _ = os.path.splitext(image_file)
+                new_image_path = os.path.join(folder_path, base_name + format_choice.lower())
+
+                try:
+                    print(f"Attempting to convert {image_path} to {new_image_path}")  # Debugging line
+                    # Use Pillow to open and convert the image
+                    with Image.open(image_path) as img:
+                        img = img.convert("RGB")  # Ensure the image is in RGB mode
+                        save_format = 'JPEG' if format_choice.lower() == '.jpeg' else 'PNG'
+                        img.save(new_image_path, save_format)
+                    
+                    os.remove(image_path)  # Remove the original file if conversion is successful
+                    successful_conversions.append(new_image_path)
+                    self.statusBar.showMessage(f"Converted {image_file} to {format_choice.lower()}", 3000)
+                except FileNotFoundError:
+                    QMessageBox.critical(self, "Error", f"File not found: {image_file}")
+                except OSError as e:
+                    QMessageBox.critical(self, "Error", f"OS error: {e}")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to convert {image_file}: {e}")
+                    print(f"Failed to convert {image_file}: {e}")  # Print detailed error
+
+            # Only update the file list if there were successful conversions
+            if successful_conversions:
+                self.populate_file_list(folder_path)
+                self.create_missing_text_files(folder_path)  # Ensure text files are created for new images
+
     def populate_file_list(self, folder_path):
         self.file_list.clear()
         files = [f for f in os.listdir(folder_path) if f.endswith(".txt")]
-        files.sort(key=lambda f: int(''.join(filter(str.isdigit, f)) or 0))
+        
+        # Sort files alphabetically
+        files.sort()  # This will sort the files in alphabetical order
+        
         self.file_list.addItems(files)
 
         # Automatically select the first file in the list
@@ -354,32 +444,49 @@ class FileEditorApp(QMainWindow):
             name_structure += '_'
 
         total_files = len(image_files)
-
-        # Determine the number of digits needed for the index
         index_format = f"{{:0{len(str(total_files))}d}}"
 
+        # Step 1: Rename to temporary names
+        temp_mappings = []  # Store original and temp names
         for index, image_name in enumerate(image_files, start=1):
             base_name, image_ext = os.path.splitext(image_name)
-            new_image_name = f"{name_structure}{index_format.format(index)}{image_ext}"
-
+            temp_image_name = f"temp_{index_format.format(index)}{image_ext}"
+            
             old_image_path = os.path.join(folder_path, image_name)
-            new_image_path = os.path.join(folder_path, new_image_name)
-            os.rename(old_image_path, new_image_path)
-
+            temp_image_path = os.path.join(folder_path, temp_image_name)
+            os.rename(old_image_path, temp_image_path)
+            
             corresponding_text_file = f"{base_name}.txt"
             if corresponding_text_file in text_files:
-                new_text_name = f"{name_structure}{index_format.format(index)}.txt"
+                temp_text_name = f"temp_{index_format.format(index)}.txt"
                 old_text_path = os.path.join(folder_path, corresponding_text_file)
-                new_text_path = os.path.join(folder_path, new_text_name)
-                os.rename(old_text_path, new_text_path)
+                temp_text_path = os.path.join(folder_path, temp_text_name)
+                os.rename(old_text_path, temp_text_path)
+                
+                # Store the mapping for both image and text files
+                temp_mappings.append((temp_image_name, temp_text_name, index))
 
-                # Update current file if it was renamed
-                if self.current_file == old_text_path:
-                    self.current_file = new_text_path
+        # Step 2: Rename from temporary names to final names
+        for temp_image_name, temp_text_name, index in temp_mappings:
+            # Rename image file
+            final_image_name = f"{name_structure}{index_format.format(index)}{os.path.splitext(temp_image_name)[1]}"
+            temp_image_path = os.path.join(folder_path, temp_image_name)
+            final_image_path = os.path.join(folder_path, final_image_name)
+            os.rename(temp_image_path, final_image_path)
+
+            # Rename text file
+            final_text_name = f"{name_structure}{index_format.format(index)}.txt"
+            temp_text_path = os.path.join(folder_path, temp_text_name)
+            final_text_path = os.path.join(folder_path, final_text_name)
+            os.rename(temp_text_path, final_text_path)
+
+            # Update current file if it was renamed
+            if self.current_file == temp_text_path:
+                self.current_file = final_text_path
 
         self.statusBar.showMessage(f"Renamed {total_files} image files and their associated text files.", 3000)
         self.populate_file_list(folder_path)
-        self.load_file_content()  # Refresh editor
+        self.load_file_content()
 
     def apply_trigger_to_all(self):
         self.unsaved_changes = False  # Temporarily disable unsaved changes check
@@ -691,6 +798,13 @@ class FileEditorApp(QMainWindow):
             file_name = selected_items[0].text()
             self.current_file = os.path.join(self.folder_label.text(), file_name)
             self.load_file_content()
+
+    def refresh_folder(self):
+        folder_path = self.folder_label.text()
+        if folder_path and os.path.isdir(folder_path):
+            self.check_and_offer_image_conversion(folder_path)  # Check for unsupported formats
+            self.populate_file_list(folder_path)  # Refresh the file list after conversion
+            self.statusBar.showMessage("Folder refreshed.", 3000)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Quick Caption Editor")
